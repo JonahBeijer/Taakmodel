@@ -1,98 +1,55 @@
-import express from 'express'
-import cors from 'cors'
+import express from 'express';
+import cors from 'cors';
 import { AzureChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage, AIMessage } from "@langchain/core/messages";
+import { SYSTEM_PROMPT } from '../promptConfig.js';
 
-const model = new AzureChatOpenAI({ temperature: 1.2 });
+const model = new AzureChatOpenAI({
+    temperature: 0.3,
+    maxTokens: 100,
+    frequencyPenalty: 0.5,
+    streaming: true
+});
 
-const app = express()
-app.use(cors())
+const app = express();
+app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({extended: true}));
 
-
-app.get('/', async (req, res) => {
-    const result = await tellJoke()
-    res.json({ message: result })
-})
-
-// Vervang beide POST handlers door deze ene:
-app.post('/', async (req, res) => {
+app.post('/stream', async (req, res) => {
     try {
-        // Probeer zowel 'prompt' als 'messages' te ondersteunen
-        const { prompt, messages } = req.body;
+        const { messages } = req.body;
 
-        if (messages) {
-            // Chat historie mode
-            const langchainMessages = messages.map(msg => {
-                switch(msg.role) {
-                    case "system": return new SystemMessage(msg.content);
-                    case "user": return new HumanMessage(msg.content);
-                    case "assistant": return new AIMessage(msg.content);
-                    default: throw new Error(`Onbekend rol type: ${msg.role}`);
-                }
-            });
-            const result = await model.invoke(langchainMessages);
-            return res.json({ message: result.content });
+        const langchainMessages = [
+            new SystemMessage(SYSTEM_PROMPT),
+            ...messages.filter(msg => ['user', 'assistant'].includes(msg.role))
+                .map(msg => msg.role === 'user'
+                    ? new HumanMessage(msg.content)
+                    : new AIMessage(msg.content))
+        ];
+
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        const stream = await model.stream(langchainMessages);
+
+        // Stuur elk token direct zonder batch
+        for await (const chunk of stream) {
+            const token = chunk.content;
+            res.write(`data: ${JSON.stringify({ token })}\n\n`);
         }
 
-        if (prompt) {
-            // Enkele prompt mode
-            const result = await model.invoke(prompt);
-            return res.json({ message: result.content });
-        }
 
-        res.status(400).json({ message: "Prompt of messages vereist" });
+
+        res.write('data: [DONE]\n\n');
+        res.end();
 
     } catch (error) {
-        console.error("Fout:", error);
-        res.status(500).json({ message: error.message || "Server error" });
-    }
-});
-async function tellJoke() {
-    const joke = await model.invoke("Tell me a Minecraft joke!")
-    return joke.content
-}
-
-
-app.post('/', async (req, res) => {
-    try {
-        const messages = req.body?.messages;
-
-        // Valideer de messages array
-        if (!Array.isArray(messages)) {
-            return res.status(400).json({
-                message: "Ongeldig bericht formaat"
-            });
-        }
-
-        // Converteer naar LangChain message objecten
-        const langchainMessages = messages.map(msg => {
-            switch(msg.role) {
-                case "system":
-                    return new SystemMessage(msg.content);
-                case "user":
-                    return new HumanMessage(msg.content);
-                case "assistant":
-                    return new AIMessage(msg.content);
-                default:
-                    throw new Error(`Onbekend rol type: ${msg.role}`);
-            }
-        });
-
-        // Stuur de volledige chat historie naar AI
-        const result = await model.invoke(langchainMessages);
-
-        res.json({
-            message: result.content
-        });
-
-    } catch (error) {
-        console.error("Chat fout:", error);
-        res.status(500).json({
-            message: error.message || "Server error"
-        });
+        console.error("Streaming error:", error);
+        res.write('data: {"error": "Streaming failed"}\n\n');
+        res.write('data: [DONE]\n\n');
+        res.end();
     }
 });
 
-app.listen(3000, () => console.log(`Server running on http://localhost:3000`))
+app.listen(3000, () => console.log('Server running on http://localhost:3000'));

@@ -1,58 +1,114 @@
-let chatHistory = []; // Hier bewaren we de chatgeschiedenis
+import { SYSTEM_PROMPT } from '../promptConfig.js';
+
+let chatHistory = [];
+const chatMessages = document.getElementById('chatMessages');
+const userInput = document.getElementById('userInput');
+const askButton = document.getElementById('askButton');
+let currentStream = null;
+
+function addMessage(role, content) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${role}-message`;
+    messageDiv.innerHTML = content;
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return messageDiv;
+}
+
+function showTypingIndicator() {
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'typing-indicator';
+    typingDiv.id = 'typingIndicator';
+    typingDiv.innerHTML = `
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+    `;
+    chatMessages.appendChild(typingDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function hideTypingIndicator() {
+    const typingIndicator = document.getElementById('typingIndicator');
+    if (typingIndicator) typingIndicator.remove();
+}
 
 async function askQuestion() {
-    const userInput = document.getElementById("userInput").value;
+    const question = userInput.value.trim();
+    if (!question) return;
 
-    // Voeg system message toe bij eerste vraag
-    if(chatHistory.length === 0) {
-        chatHistory.push({
-            role: "system",
-            content: "You're a helpful assistant"
-        });
-    }
+    addMessage('user', question);
+    userInput.value = '';
+    askButton.disabled = true;
 
-    // Voeg gebruikersvraag toe aan historie
-    chatHistory.push({
-        role: "user",
-        content: userInput
-    });
+    chatHistory.push({ role: "user", content: question });
+    const assistantMessage = addMessage('assistant', '');
+    showTypingIndicator();
+
+    let fullResponse = '';
+    let typingDelay = 0;
+    const baseDelay = 100; // Basis delay tussen tokens (ms)
+    const randomVariation = 25; // Willekeurige variatie
 
     try {
-        const response = await fetch("http://localhost:3000/", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+        const response = await fetch('http://localhost:3000/stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ messages: chatHistory }),
         });
 
-        const data = await response.json();
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
 
-        // Voeg AI antwoord toe aan historie
-        chatHistory.push({
-            role: "assistant",
-            content: data.message
-        });
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-        updateChatDisplay();
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n').filter(l => l.trim());
 
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+
+                const data = line.replace('data: ', '');
+                if (data === '[DONE]') {
+                    chatHistory.push({ role: "assistant", content: fullResponse });
+                    hideTypingIndicator();
+                    assistantMessage.innerHTML = fullResponse;
+                    return;
+                }
+
+                try {
+                    const { token } = JSON.parse(data);
+                    if (token) {
+                        // Voeg vertraging toe met kleine variatie
+                        typingDelay += baseDelay + Math.random() * randomVariation;
+
+                        setTimeout(() => {
+                            fullResponse += token;
+                            assistantMessage.innerHTML = fullResponse + '<span class="typing-cursor">|</span>';
+                            chatMessages.scrollTop = chatMessages.scrollHeight;
+                        }, typingDelay);
+                    }
+                } catch (e) {
+                    console.error('Parse error:', e);
+                }
+            }
+        }
     } catch (error) {
-        console.error("Fout:", error);
-        document.getElementById("response").innerHTML +=
-            `<div class="error">Fout: ${error.message}</div>`;
+        console.error("Error:", error);
+        hideTypingIndicator();
+        assistantMessage.textContent = "Fout: Kon geen antwoord genereren";
+    } finally {
+        setTimeout(() => {
+            askButton.disabled = false;
+        }, typingDelay + 100); // Wacht tot laatste token is weergegeven
     }
 }
+// Event listeners
+askButton.addEventListener('click', askQuestion);
+userInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') askQuestion();
+});
 
-function updateChatDisplay() {
-    const container = document.getElementById("response");
-    container.innerHTML = chatHistory
-        .filter(msg => msg.role !== "system") // Verberg system messages
-        .map(msg => `
-            <div class="message ${msg.role}">
-                <strong>${msg.role}:</strong> 
-                ${msg.content}
-            </div>
-        `).join("");
-}
-
-// Event listener voor de knop
-document.getElementById("askButton").addEventListener("click", askQuestion);
-
+userInput.focus();
