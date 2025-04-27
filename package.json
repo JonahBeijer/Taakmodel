@@ -12,10 +12,14 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@langchain/core": "^0.3.44",
+    "@langchain/community": "^0.3.41",
+    "@langchain/core": "^0.3.45",
     "@langchain/openai": "^0.5.5",
+    "@langchain/textsplitters": "^0.1.0",
+    "axios": "^1.8.4",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "faiss-node": "^0.5.1",
     "langchain": "^0.3.21"
   },
   "devDependencies": {

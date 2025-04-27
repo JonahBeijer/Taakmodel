@@ -1,10 +1,8 @@
-import { SYSTEM_PROMPT } from '../promptConfig.js';
-
 let chatHistory = [];
 const chatMessages = document.getElementById('chatMessages');
 const userInput = document.getElementById('userInput');
 const askButton = document.getElementById('askButton');
-let currentStream = null;
+let currentController = null;
 
 function addMessage(role, content) {
     const messageDiv = document.createElement('div');
@@ -13,6 +11,19 @@ function addMessage(role, content) {
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return messageDiv;
+}
+
+function addNewsStory(storyContent) {
+    const storyDiv = document.createElement('div');
+    storyDiv.className = 'message assistant-message news-story';
+    storyDiv.innerHTML = `
+        <div class="verhaal-header">
+            <h3 class="verhaal-titel">🗞️ Nieuws Update</h3>
+            <div class="verhaal-inhoud">${storyContent}</div>
+        </div>
+    `;
+    chatMessages.appendChild(storyDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
 function showTypingIndicator() {
@@ -34,6 +45,11 @@ function hideTypingIndicator() {
 }
 
 async function askQuestion() {
+    if (currentController) {
+        currentController.abort();
+    }
+    currentController = new AbortController();
+
     const question = userInput.value.trim();
     if (!question) return;
 
@@ -42,20 +58,30 @@ async function askQuestion() {
     askButton.disabled = true;
 
     chatHistory.push({ role: "user", content: question });
+
     const assistantMessage = addMessage('assistant', '');
     showTypingIndicator();
 
     let fullResponse = '';
     let typingDelay = 0;
-    const baseDelay = 100; // Basis delay tussen tokens (ms)
-    const randomVariation = 25; // Willekeurige variatie
+    const baseDelay = 100;
+    const randomVariation = 25;
 
     try {
         const response = await fetch('http://localhost:3000/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messages: chatHistory }),
+            // In de askQuestion functie:
+            body: JSON.stringify({
+                messages: chatHistory,
+                context: chatHistory.slice(-15) // Meer context behouden
+            }),
+            signal: currentController.signal
         });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -79,33 +105,44 @@ async function askQuestion() {
                 }
 
                 try {
-                    const { token } = JSON.parse(data);
-                    if (token) {
-                        // Voeg vertraging toe met kleine variatie
-                        typingDelay += baseDelay + Math.random() * randomVariation;
+                    const parsedData = JSON.parse(data);
 
+                    if (parsedData.story) {
+                        hideTypingIndicator();
+                        addNewsStory(parsedData.story);
+                    }
+                    else if (parsedData.token) {
+                        typingDelay += baseDelay + Math.random() * randomVariation;
                         setTimeout(() => {
-                            fullResponse += token;
+                            fullResponse += parsedData.token;
                             assistantMessage.innerHTML = fullResponse + '<span class="typing-cursor">|</span>';
                             chatMessages.scrollTop = chatMessages.scrollHeight;
                         }, typingDelay);
                     }
+                    else if (parsedData.error) {
+                        hideTypingIndicator();
+                        assistantMessage.textContent = parsedData.error;
+                    }
+
                 } catch (e) {
                     console.error('Parse error:', e);
                 }
             }
         }
     } catch (error) {
-        console.error("Error:", error);
-        hideTypingIndicator();
-        assistantMessage.textContent = "Fout: Kon geen antwoord genereren";
+        if (error.name !== 'AbortError') {
+            console.error("Error:", error);
+            hideTypingIndicator();
+            assistantMessage.textContent = "Fout: Kon geen antwoord genereren";
+        }
     } finally {
+        currentController = null;
         setTimeout(() => {
             askButton.disabled = false;
-        }, typingDelay + 100); // Wacht tot laatste token is weergegeven
+        }, typingDelay + 100);
     }
 }
-// Event listeners
+
 askButton.addEventListener('click', askQuestion);
 userInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') askQuestion();
