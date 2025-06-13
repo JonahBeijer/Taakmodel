@@ -1,22 +1,34 @@
+
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
-import { AzureChatOpenAI, AzureOpenAIEmbeddings } from "@langchain/openai";
+import { AzureChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import { TextLoader } from "langchain/document_loaders/fs/text";
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
-import { storyPrompt } from '../promptConfig.js';
+import { AzureOpenAIEmbeddings } from "@langchain/openai";
+import { TextLoader } from "langchain/document_loaders/fs/text";
+import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 
+// Model initialisatie met streaming
 const model = new AzureChatOpenAI({
-    temperature: 0.4,
-    maxTokens: 1200,
+    temperature: 0.7,
+    maxTokens: 800,
     frequencyPenalty: 0.2,
-    streaming: true
+    presencePenalty: 0.2,
+    streaming: true,
+    callbacks: [
+        {
+            handleLLMNewToken(token) {
+                // Token verwerking voor debugging
+                // console.debug("Nieuwe token:", token);
+            }
+        }
+    ]
 });
 
+// Embeddings voor vector database
+// Zorg ervoor dat AZURE_EMBEDDING_DEPLOYMENT_NAME in je .env bestand staat
 const embeddings = new AzureOpenAIEmbeddings({
-    temperature: 0,
     azureOpenAIApiEmbeddingsDeploymentName: process.env.AZURE_EMBEDDING_DEPLOYMENT_NAME
 });
 
@@ -24,17 +36,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Globale variabelen
 let vectorStore;
 let isVectorStoreReady = false;
+const newsMemory = new Set();
+const userSessions = new Map();
 
-async function initializeVectorStore() {
+// Anime database laden
+async function loadVectorStore() {
     try {
+        // Zorg ervoor dat dit pad correct is voor jouw systeem
         const loader = new TextLoader("C:/Users/jonah/TaalModel-PRG8/public/vectorbestand.txt");
         const docs = await loader.load();
-
-        if (docs.length === 0) {
-            throw new Error("Geen documenten geladen uit vectorbestand.txt");
-        }
 
         const textSplitter = new RecursiveCharacterTextSplitter({
             chunkSize: 1000,
@@ -44,168 +57,275 @@ async function initializeVectorStore() {
         const splitDocs = await textSplitter.splitDocuments(docs);
         vectorStore = await FaissStore.fromDocuments(splitDocs, embeddings);
         isVectorStoreReady = true;
-        console.log("Vectorstore succesvol geladen");
+        console.log("✅ Anime database geladen");
     } catch (error) {
-        console.error("Vectorstore initialisatiefout:", error);
+        console.error("❌ Databasefout:", error);
         process.exit(1);
     }
 }
 
-initializeVectorStore().then(() => {
-    app.listen(3000, () => {
-        console.log('Server draait op http://localhost:3000');
-        console.log(`Vectorstore status: ${isVectorStoreReady ? 'Klaar' : 'Niet klaar'}`);
-    });
-});
-
-async function fetchNews() {
+// Nieuws ophalen met categorie-filter
+async function getFreshNews(category) {
     try {
         const response = await axios.get('https://newsdata.io/api/1/news', {
             params: {
+                // Zorg ervoor dat je API-sleutel geldig en actief is
                 apikey: 'pub_81002b6ed8566a206e80849484a99d001fad0',
                 country: 'nl',
                 language: 'nl',
-                category: 'politics,technology,science,health'
+                category: category,
             }
         });
-        return response.data.results.slice(0, 3);
+
+        if (!response.data.results) {
+            console.warn("API gaf geen 'results' array terug.");
+            return [];
+        }
+
+        return response.data.results.filter(article =>
+            article.title &&
+            article.description &&
+            article.description.length > 50 &&
+            article.link &&
+            !newsMemory.has(article.title)
+        );
     } catch (error) {
-        console.error('Nieuws API Fout:', error);
-        return null;
+        console.error('❌ Nieuwsfout:', error.response ? error.response.data : error.message);
+        return [];
     }
 }
 
-app.post('/stream', async (req, res) => {
+// Anime aanbevelingen zoeken
+async function findRelatedAnime(themes, count = 5) {
     if (!isVectorStoreReady) {
-        return res.status(503).json({ error: "Vectorstore nog niet geladen" });
+        console.warn("Vector store niet geladen!");
+        return [];
     }
+    try {
+        const query = themes.join(", ");
+        const results = await vectorStore.similaritySearch(query, count);
+
+        return results.map(doc => {
+            const content = doc.pageContent;
+            const animeData = {};
+            content.split('\n').forEach(line => {
+                if (line.startsWith('Titel:')) animeData.title = line.replace('Titel:', '').trim();
+                else if (line.startsWith('Jaar:')) animeData.year = line.replace('Jaar:', '').trim();
+                else if (line.startsWith('Thema:')) animeData.theme = line.replace('Thema:', '').trim();
+                else if (line.startsWith('Beschrijving:')) animeData.description = line.replace('Beschrijving:', '').trim();
+            });
+            return {
+                title: animeData.title || 'Onbekende titel',
+                year: animeData.year || '?',
+                theme: animeData.theme || 'Geen thema gespecificeerd',
+                description: animeData.description || 'Geen beschrijving beschikbaar.',
+            };
+        });
+    } catch (error) {
+        console.error("❌ Zoekfout:", error);
+        return [];
+    }
+}
+
+// Belangrijke thema's extraheren
+function extractThemes(article) {
+    const importantKeywords = [
+        ...(article.keywords || []),
+        ...article.title.split(/\s+/).filter(word => word.length > 3),
+        ...(article.description ? article.description.split(/\s+/) : [])
+    ];
+
+    const stopWords = new Set(['de', 'het', 'een', 'en', 'in', 'op', 'voor', 'van', 'met', 'is', 'te', 'zijn']);
+    return [...new Set(importantKeywords)]
+        .map(word => word.toLowerCase().replace(/[.,!?]/g, '')) // Normaliseer woorden
+        .filter(word => word && word.length > 3 && !stopWords.has(word))
+        .slice(0, 5);
+}
+
+// Streaming response handler
+async function handleStreamingResponse(res, stream, session, role = "assistant", delayMs = 20) {
+    const controller = new AbortController();
+    const signal = controller.signal;
+    let fullResponse = '';
+    let isFirstToken = true;
+
+    res.on('close', () => {
+        if (!signal.aborted) {
+            controller.abort();
+            console.log("🔌 Streaming afgebroken door client");
+        }
+    });
 
     try {
-        const { messages, context } = req.body;
-        const latestMessage = messages[messages.length - 1]?.content?.toLowerCase();
-
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-
-        // Handle news request
-        if (latestMessage.includes('nieuws')) {
-            const newsArticles = await fetchNews();
-            if (!newsArticles) {
-                res.write('data: {"error": "⚠️ Kon het nieuws niet ophalen"}\n\n');
-                res.write('data: [DONE]\n\n');
-                return res.end();
-            }
-
-            const selectedArticle = newsArticles[0];
-            let animeRecommendations = [];
-
-            try {
-                animeRecommendations = await vectorStore.similaritySearch(
-                    `${selectedArticle.title} ${selectedArticle.description}`, 3
-                );
-            } catch (searchError) {
-                console.error("Anime search error:", searchError);
-            }
-
-            const verifiedAnimeList = animeRecommendations.map(doc => {
-                const lines = doc.pageContent.split('\n');
-                return {
-                    title: lines[0].replace('Titel: ', '').trim(),
-                    jaar: lines[1].replace('Jaar: ', '').trim(),
-                    theme: lines[2].replace('Thema: ', '').trim(),
-                    details: lines.slice(3).join('\n')
-                };
-            });
-
-            const storyPromptWithContext = `${storyPrompt}
-                **Nieuwsartikel**:
-                Titel: ${selectedArticle.title}
-                Beschrijving: ${selectedArticle.description.substring(0, 250)}
-                
-                **Anime uit database**:
-                ${verifiedAnimeList.map(a =>
-                `- ${a.title} (${a.jaar}): ${a.theme}`
-            ).join('\n')}
-                
-                **Instructies**:
-                1. Max 1 alinea nieuwssamenvatting
-                2. Identificeer 2-3 hoofdthema's
-                3. Link anime's aan deze thema's
-                4. Gebruik anime-details uit database`;
-
-            const stream = await model.stream([
-                new SystemMessage(storyPromptWithContext),
-                new HumanMessage(`Geef een nieuwsupdate en anime-aanraders. Bron: ${selectedArticle.link}`)
-            ]);
-
-            let fullStory = '';
-            for await (const chunk of stream) {
+        for await (const chunk of stream) {
+            if (signal.aborted) break;
+            if (chunk.content) {
                 const token = chunk.content;
-                const mentionedAnime = verifiedAnimeList.some(anime =>
-                    token.toLowerCase().includes(anime.title.toLowerCase())
-                );
-
-                if(!mentionedAnime && token.match(/anime|serie/i)) {
-                    res.write(`data: ${JSON.stringify({ error: "⚠️ Anime niet in database" })}\n\n`);
-                    continue;
+                fullResponse += token;
+                const currentDelay = isFirstToken ? delayMs * 3 : delayMs;
+                await new Promise(resolve => setTimeout(resolve, currentDelay));
+                isFirstToken = false;
+                if (!res.writableEnded) {
+                    res.write(`data: ${JSON.stringify({ token })}\n\n`);
                 }
-
-                res.write(`data: ${JSON.stringify({ token })}\n\n`);
-                fullStory += token;
             }
-
-            res.write('data: [DONE]\n\n');
-            return res.end();
         }
-
-        // Handle normal questions with context
-        const mentionedAnimeTitles = context.flatMap(msg =>
-            msg.content.match(/(?<=- )[A-Za-z0-9 ]+(?= \()/g) || []
-        );
-
-        let contextText = '';
-        if(mentionedAnimeTitles.length > 0) {
-            const titleResults = await vectorStore.similaritySearch(mentionedAnimeTitles.join(' '), 2);
-            contextText += 'Eerder besproken anime:\n' + titleResults.map(d => {
-                const lines = d.pageContent.split('\n');
-                return `- ${lines[0]} (${lines[1]})\n  ${lines[2]}\n  ${lines.slice(3).join('\n')}`;
-            }).join('\n');
-        }
-
-        const questionResults = await vectorStore.similaritySearch(latestMessage, 3);
-        contextText += '\n\nRelevante informatie:\n' + questionResults.map(d => d.pageContent).join('\n\n');
-
-        const enhancedPrompt = `${storyPrompt}
-            **Conversatiecontext**:
-            ${context.slice(-3).map(m => `${m.role}: ${m.content}`).join('\n')}
-
-            **Database informatie**:
-            ${contextText.substring(0, 1000)}
-
-            **Antwoordrichtlijnen**:
-            1. Gebruik alleen onderstaande informatie
-            2. Leg verband met eerder genoemde anime's
-            3. Varieer in uitlegstijl
-            4. Max 2 alinea's`;
-
-        const chatStream = await model.stream([
-            new SystemMessage(enhancedPrompt),
-            new HumanMessage(latestMessage)
-        ]);
-
-        for await (const chunk of chatStream) {
-            const token = chunk.content;
-            res.write(`data: ${JSON.stringify({ token })}\n\n`);
-        }
-
-        res.write('data: [DONE]\n\n');
-        res.end();
-
     } catch (error) {
-        console.error("Streaming fout:", error);
-        res.write('data: {"error": "⚠️ Er ging iets mis tijdens het genereren"}\n\n');
-        res.write('data: [DONE]\n\n');
-        res.end();
+        if (error.name !== 'AbortError') {
+            console.error("❌ Streamfout:", error);
+            if (!res.writableEnded) {
+                res.write('data: {"token": " Oeps, er ging iets mis tijdens het genereren."}\n\n');
+            }
+        }
+    } finally {
+        if (!signal.aborted && !res.writableEnded) {
+            res.write('data: [DONE]\n\n');
+            session.conversationHistory.push({ role, content: fullResponse });
+        }
+        if (!res.writableEnded) {
+            res.end();
+        }
     }
+}
+
+/**
+ * Bepaalt de intentie van de gebruiker met behulp van het taalmodel.
+ * @param {Array<object>} conversationHistory - De geschiedenis van het gesprek.
+ * @param {string} userMessage - Het laatste bericht van de gebruiker.
+ * @returns {Promise<string>} De vastgestelde intentie ('GET_NEWS', 'GET_ANIME', 'FOLLOW_UP', 'GENERAL_CHAT').
+ */
+async function getIntent(conversationHistory, userMessage) {
+    // We gebruiken alleen de laatste 4 berichten voor een beknopte context
+    const history = conversationHistory.slice(-4).map(msg => `${msg.role}: ${msg.content}`).join('\n');
+
+    const routerPrompt = `
+Je bent een expert intentie-classifier. Analyseer het laatste bericht van de gebruiker ("user") in de context van de recente gespreksgeschiedenis.
+Classificeer de intentie in EEN van de volgende vier categorieën. Je antwoord mag UITSLUITEND een van deze vier woorden zijn.
+
+CATEGORIEËN:
+1.  GET_NEWS: De gebruiker wil een nieuw, vers nieuwsartikel horen. Dit geldt voor zinnen als "geef me het nieuws", "een ander artikel", "iets over politiek".
+2.  GET_ANIME: De gebruiker wil een of meer anime-aanbevelingen die passen bij het HUIDIGE nieuwsartikel.
+3.  FOLLOW_UP: De gebruiker stelt een verdiepende vraag over wat de assistent Zojuist heeft gezegd. Dit geldt voor zinnen als "waarom past die?", "geef meer uitleg daarover", "vertel meer over het eerste punt", "wat bedoel je daarmee?".
+4.  GENERAL_CHAT: Alle andere conversatie. Begroetingen, algemene vragen, of opmerkingen die niet direct in de andere categorieën vallen.
+
+---
+CONVERSATIEGESCHIEDENIS:
+${history}
+---
+LAATSTE BERICHT VAN GEBRUIKER:
+"${userMessage}"
+---
+
+Welke categorie is dit? Geef alleen het woord.`;
+
+    // Gebruik een apart, klein model voor snelle classificatie indien beschikbaar, of het hoofdmodel
+    const routerModel = new AzureChatOpenAI({ temperature: 0, maxTokens: 10 });
+    const response = await routerModel.invoke([new SystemMessage(routerPrompt)]);
+    const intent = response.content.trim().replace('.', ''); // Verwijder eventuele punten
+
+    // Validatie om zeker te zijn dat het model een van de vier opties teruggeeft
+    const validIntents = ['GET_NEWS', 'GET_ANIME', 'FOLLOW_UP', 'GENERAL_CHAT'];
+    if (validIntents.includes(intent)) {
+        console.log(`🤖 Intentie vastgesteld: ${intent}`);
+        return intent;
+    }
+
+    console.warn(`❗️ Onbekende intentie ontvangen: "${intent}". Valt terug op GENERAL_CHAT.`);
+    return 'GENERAL_CHAT'; // Fallback voor als de AI iets anders teruggeeft
+}
+
+// Hoofd endpoint voor chat met streaming
+// VERVANG JE VOLLEDIGE app.post FUNCTIE MET DEZE:
+app.post('/chat', async (req, res) => {
+    const { messages, sessionId } = req.body;
+    if (!messages || messages.length === 0 || !sessionId) {
+        return res.status(400).json({ error: 'Foute request: "messages" en "sessionId" zijn verplicht.' });
+    }
+    const userMessage = messages[messages.length - 1].content;
+
+    if (!userSessions.has(sessionId)) {
+        userSessions.set(sessionId, {
+            currentNews: null,
+            currentThemes: null,
+            conversationHistory: []
+        });
+    }
+    const session = userSessions.get(sessionId);
+
+    // Bepaal de intentie VOORDAT we het bericht aan de geschiedenis toevoegen
+    const intent = await getIntent(session.conversationHistory, userMessage);
+
+    // Voeg het bericht nu pas toe aan de geschiedenis
+    session.conversationHistory.push({ role: "user", content: userMessage });
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    try {
+        switch (intent) {
+            case 'GET_NEWS':
+                let category = 'politics,technology,science,health,entertainment';
+                const categoryMap = { 'politiek': 'politics', 'technologie': 'technology', 'wetenschap': 'science', 'gezondheid': 'health', 'entertainment': 'entertainment' };
+                for (const [keyword, apiCategory] of Object.entries(categoryMap)) {
+                    if (userMessage.toLowerCase().includes(keyword)) { category = apiCategory; break; }
+                }
+                const articles = await getFreshNews(category);
+                if (articles.length === 0) {
+                    return res.end('data: {"token": "Helaas kon ik op dit moment geen passend nieuws vinden."}\n\ndata: [DONE]\n\n');
+                }
+                const article = articles.reduce((best, current) => (current.description.length > best.description.length) ? current : best);
+                newsMemory.add(article.title);
+                session.currentNews = article;
+                session.currentThemes = extractThemes(article);
+
+                const newsSystemPrompt = `Vat dit nieuwsartikel samen: "${article.title}: ${article.description}". Sluit af met de vraag: "Waar wil je het over hebben, of wil je misschien passende anime-aanbevelingen?"`;
+                const streamNews = await model.stream([new SystemMessage(newsSystemPrompt)]);
+                return handleStreamingResponse(res, streamNews, session);
+
+            case 'GET_ANIME':
+                if (!session.currentNews) {
+                    return res.end('data: {"token": "Ik heb nog geen nieuwsartikel om een aanbeveling op te baseren. Vraag me eerst om het nieuws!"}\n\ndata: [DONE]\n\n');
+                }
+                const animeRecommendations = await findRelatedAnime(session.currentThemes, 2);
+                if (animeRecommendations.length === 0) {
+                    return res.end('data: {"token": "Helaas, ik kon geen passende anime vinden bij dit specifieke nieuwsartikel."}\n\ndata: [DONE]\n\n');
+                }
+                const animeSystemPrompt = `Je bent Aiko, een anime-expert. Het nieuws is "${session.currentNews.title}". Geef aanbevelingen op basis van: ${JSON.stringify(animeRecommendations)}. Leg per anime in 1-2 zinnen uit waarom het past bij de thema's van het nieuws (zoals technologie, hacking, samenwerking).`;
+                const streamAnime = await model.stream([new SystemMessage(animeSystemPrompt)]);
+                return handleStreamingResponse(res, streamAnime, session);
+
+            case 'FOLLOW_UP':
+            case 'GENERAL_CHAT':
+            default:
+                const contextPrompt = `
+Je bent Aiko, een vriendelijke en behulpzame AI-assistent.
+Huidig nieuwsartikel in sessie: "${session.currentNews?.title || 'geen'}"
+
+TAAK: Beantwoord de laatste vraag van de gebruiker op basis van de gespreksgeschiedenis.
+- Als de vraag een verduidelijking is ("waarom", "leg uit", "vertel meer"), baseer je antwoord dan VOLLEDIG op de vorige berichten.
+- Als het een algemene vraag is, voer dan een normaal, behulpzaam gesprek.
+
+GESCHIEDENIS:
+${session.conversationHistory.slice(-6).map(msg => `${msg.role}: ${msg.content}`).join('\n')}
+`;
+                const streamGeneral = await model.stream([
+                    new SystemMessage(contextPrompt)
+                    // Let op: de HumanMessage is al onderdeel van de history, dus hoeft hier niet per se opnieuw.
+                ]);
+                return handleStreamingResponse(res, streamGeneral, session);
+        }
+    } catch (error) {
+        console.error("❌ Chatfout:", error);
+        if (!res.writableEnded) {
+            res.end('data: {"token": "Oeps, er is een interne fout opgetreden."}\n\ndata: [DONE]\n\n');
+        }
+    }
+});
+
+// Server starten
+loadVectorStore().then(() => {
+    app.listen(3000, () => {
+        console.log('🚀 Server draait op http://localhost:3000');
+    });
 });
