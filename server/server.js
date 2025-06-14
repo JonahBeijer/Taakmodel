@@ -70,7 +70,7 @@ async function getFreshNews(category) {
         const response = await axios.get('https://newsdata.io/api/1/news', {
             params: {
                 // Zorg ervoor dat je API-sleutel geldig en actief is
-                apikey: 'pub_81002b6ed8566a206e80849484a99d001fad0',
+                apikey: 'process.env.NEWSDATA_API',
                 country: 'nl',
                 language: 'nl',
                 category: category,
@@ -291,7 +291,7 @@ app.post('/chat', async (req, res) => {
                 if (animeRecommendations.length === 0) {
                     return res.end('data: {"token": "Helaas, ik kon geen passende anime vinden bij dit specifieke nieuwsartikel."}\n\ndata: [DONE]\n\n');
                 }
-                const animeSystemPrompt = `Je bent Aiko, een anime-expert. Het nieuws is "${session.currentNews.title}". Geef aanbevelingen op basis van: ${JSON.stringify(animeRecommendations)}. Leg per anime in 1-2 zinnen uit waarom het past bij de thema's van het nieuws (zoals technologie, hacking, samenwerking).`;
+                const animeSystemPrompt = `Je bent Gon, een anime-expert. Het nieuws is "${session.currentNews.title}". Geef aanbevelingen op basis van: ${JSON.stringify(animeRecommendations)}. Leg per anime in 1-2 zinnen uit waarom het past bij de thema's van het nieuws (zoals technologie, hacking, samenwerking).`;
                 const streamAnime = await model.stream([new SystemMessage(animeSystemPrompt)]);
                 return handleStreamingResponse(res, streamAnime, session);
 
@@ -299,7 +299,7 @@ app.post('/chat', async (req, res) => {
             case 'GENERAL_CHAT':
             default:
                 const contextPrompt = `
-Je bent Aiko, een vriendelijke en behulpzame AI-assistent.
+Je bent Gon, een vriendelijke en behulpzame AI-assistent.
 Huidig nieuwsartikel in sessie: "${session.currentNews?.title || 'geen'}"
 
 TAAK: Beantwoord de laatste vraag van de gebruiker op basis van de gespreksgeschiedenis.

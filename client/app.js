@@ -197,7 +197,7 @@ userInput.addEventListener('keypress', (e) => {
 });
 
 setTimeout(() => {
-    addMessage('assistant', 'Hallo! Ik ben Aiko, je anime- en nieuwsassistent. Vraag me naar het laatste nieuws!');
+    addMessage('assistant', 'Hallo! Ik ben Gon, je anime- en nieuwsassistent. Vraag me naar het laatste nieuws!');
 }, 1000);
 
 userInput.focus();
