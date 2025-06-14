@@ -59,7 +59,7 @@ De server draait nu op http://localhost:3000.
 2. Start de client:
 In je tweede terminal (in de /client map):
 
-Bash
+
 
 npm run dev
 Vite zal nu een lokale URL tonen (meestal http://localhost:5173). Open deze URL in je browser.
