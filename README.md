@@ -38,6 +38,9 @@ AZURE_OPENAI_API_VERSION="..."
 # NewsData.io API Key
 NEWSDATA_API="..."
 
+```
+
+````bash
 2. Client Setup (Frontend)
 Open een tweede, aparte terminal en navigeer naar de /client map:
 # Ga naar de client map
@@ -63,6 +66,8 @@ In je tweede terminal (in de /client map):
 
 npm run dev
 Vite zal nu een lokale URL tonen (meestal http://localhost:5173). Open deze URL in je browser.
+
+````
 
 Hoe praat je met Gon?
 De bot werkt het beste als je een logische volgorde aanhoudt:
