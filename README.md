@@ -40,8 +40,9 @@ NEWSDATA_API="..."
 
 ```
 
+
+### 2. Client Setup (Frontend)
 ````bash
-2. Client Setup (Frontend)
 Open een tweede, aparte terminal en navigeer naar de /client map:
 # Ga naar de client map
 cd client
@@ -69,7 +70,7 @@ Vite zal nu een lokale URL tonen (meestal http://localhost:5173). Open deze URL 
 
 ````
 
-Hoe praat je met Gon?
+### Hoe praat je met Gon?
 De bot werkt het beste als je een logische volgorde aanhoudt:
 
 Start met vragen om nieuws: "geef me het laatste nieuws"
@@ -77,6 +78,6 @@ Vraag daarna om een aanbeveling: "geef een passende anime bij dit nieuws"
 Test de AI met een vervolgvraag: "waarom past die aanbeveling erbij?"
 PS. Je hoeft niet precies deze zinnen te gebruiken! De bot gebruikt een slimme "AI-Router" om te snappen wat je bedoelt, dus experimenteer gerust.
 
-Opmerkingen
+### Opmerkingen
 De kwaliteit van de anime-aanbevelingen hangt volledig af van de inhoud van je vectorbestand.txt.
 De AI-Router is slim, maar kan soms een gek antwoord geven als een vraag heel onduidelijk is.
