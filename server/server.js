@@ -70,7 +70,7 @@ async function getFreshNews(category) {
         const response = await axios.get('https://newsdata.io/api/1/news', {
             params: {
                 // Zorg ervoor dat je API-sleutel geldig en actief is
-                apikey: 'process.env.NEWSDATA_API',
+                apikey: process.env.NEWSDATA_API,
                 country: 'nl',
                 language: 'nl',
                 category: category,

@@ -1,65 +1,77 @@
 # Gon - AI Nieuws & Anime Assistent
 
 Dit is een LLM project met Azure OpenAI voor een AI-chatbot genaamd Gon.
+Het project is gemaakt met **Vanilla Javascript + Vite (Client)** en **Node.js/Express (Server)** en gebruikt **LangChain**.
 
-Het project is gemaakt met Vanilla Javascript en Node.js/Express en gebruikt Langchain en AZURE.
+## Installatie
 
-## installatie
-
-Voor het gebruiken van het project moet je een aantal dingen hebben geinstalleerd:
-
+Voor je het project kunt gebruiken, moet je geïnstalleerd hebben:
 - Node.js
 - npm
 - Git
 
-Daarna kun je de github repo clonen in je eigen editor. Het project werkt alleen lokaal. Open een terminal in de hoofdmap van het project.
+Clone daarna de repository en volg de stappen voor de **server** en de **client**.
 
-**Installeer de benodigde packages:**
+### 1. Server Setup (Backend)
+
+Open een terminal en navigeer naar de `/server` map:
+
 ```bash
+# Ga naar de server map
+cd server
+
+# Installeer de packages
 npm install express cors axios @langchain/openai @langchain/community langchain dotenv
 
-Dit installeert alles wat de server nodig heeft.
+# Maak een .env bestand aan in de /server map
+# en vul het met je API sleutels (zie hieronder)
 
-env
-De backend gebruikt een .env bestand. Hier moeten je API sleutels voor AZURE en de Nieuws API in.
-Deze zal je zelf moeten aanmaken in de server directory aangezien er gevoelige informatie in staat.
-
-Hierin moet staan:
+Inhoud van .env bestand (in /server map):
 
 # Azure OpenAI Credentials
 AZURE_OPENAI_API_KEY="..."
 AZURE_OPENAI_API_INSTANCE_NAME="..."
 AZURE_OPENAI_API_DEPLOYMENT_NAME="..."
 AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME="..."
-AZURE_OPENAI_API_VERSION="2023-07-01-preview"
+AZURE_OPENAI_API_VERSION="..."
 
 # NewsData.io API Key
-NEWSDATA_API_KEY="..."
-Vervang de ... door je eigen API keys.
+NEWSDATA_API="..."
 
-belangrijke aanpassingen
-! let op: je moet 3 kleine aanpassingen maken in server.js om het project te laten werken !
+2. Client Setup (Frontend)
+Open een tweede, aparte terminal en navigeer naar de /client map:
+# Ga naar de client map
+cd client
 
-Laad de .env variabelen: Voeg deze regel helemaal bovenaan server.js toe:
+# Installeer de packages
+npm install
 
-starten & gebruiken
-1. Start de server: Open je terminal in de projectmap en type:
+Starten & Gebruiken
+Je hebt twee terminals tegelijk nodig om het project te draaien.
+
+1. Start de server:
+In je eerste terminal (in de /server map):
+
+node server.js
+
+De server draait nu op http://localhost:3000.
+
+2. Start de client:
+In je tweede terminal (in de /client map):
 
 Bash
 
-node server.js
-Dit start de backend. Je ziet 🚀 Server draait op http://localhost:3000 als het goed is.
+npm run dev
+Vite zal nu een lokale URL tonen (meestal http://localhost:5173). Open deze URL in je browser.
 
-2. Open de client: Ga naar je projectmap en open het index.html bestand gewoon in je browser.
+Hoe praat je met Gon?
+De bot werkt het beste als je een logische volgorde aanhoudt:
 
-Hoe praat je met Gon? De bot werkt het beste als je een logische volgorde aanhoudt.
-
-Start door te vragen naar het nieuws. Bijvoorbeeld: "geef me het laatste nieuws"
-Vraag daarna om een aanbeveling. Bijvoorbeeld: "geef een passende anime bij dit nieuws"
-Test de AI met een vervolgvraag! Bijvoorbeeld: "waarom past die aanbeveling erbij?"
+Start met vragen om nieuws: "geef me het laatste nieuws"
+Vraag daarna om een aanbeveling: "geef een passende anime bij dit nieuws"
+Test de AI met een vervolgvraag: "waarom past die aanbeveling erbij?"
 PS. Je hoeft niet precies deze zinnen te gebruiken! De bot gebruikt een slimme "AI-Router" om te snappen wat je bedoelt, dus experimenteer gerust.
 
-opmerkingen
-De kwaliteit van de anime-aanbevelingen hangt volledig af van hoe goed je vectorbestand.txt is. Betere beschrijvingen = betere aanbevelingen.
-De AI-Router is slim, maar kan soms een gek antwoord geven als je vraag heel onduidelijk is. Meestal werkt het echter verrassend goed!
-Het project is bedoeld om lokaal te draaien.
+Opmerkingen
+De kwaliteit van de anime-aanbevelingen hangt volledig af van de inhoud van je vectorbestand.txt.
+De AI-Router is slim, maar kan soms een gek antwoord geven als een vraag heel onduidelijk is.
