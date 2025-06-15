@@ -1,7 +1,7 @@
 # Gon - AI Nieuws & Anime Assistent
 
 Dit is een LLM project met Azure OpenAI voor een AI-chatbot genaamd Gon.
-Het project is gemaakt met **Vanilla Javascript + Vite (Client)** en **Node.js/Express (Server)** en gebruikt **LangChain**.
+Het project is gemaakt met **Javascript + Vite (Client)** en **Node.js/Express (Server)** en gebruikt **LangChain**.
 
 ## Installatie
 
@@ -21,7 +21,7 @@ Open een terminal en navigeer naar de `/server` map:
 cd server
 
 # Installeer de packages
-npm install express cors axios @langchain/openai @langchain/community langchain dotenv
+npm install express cors axios @langchain/openai @langchain/community langchain
 
 # Maak een .env bestand aan in de /server map
 # en vul het met je API sleutels (zie hieronder)

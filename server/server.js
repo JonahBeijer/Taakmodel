@@ -19,15 +19,13 @@ const model = new AzureChatOpenAI({
     callbacks: [
         {
             handleLLMNewToken(token) {
-                // Token verwerking voor debugging
-                // console.debug("Nieuwe token:", token);
+
             }
         }
     ]
 });
 
 // Embeddings voor vector database
-// Zorg ervoor dat AZURE_EMBEDDING_DEPLOYMENT_NAME in je .env bestand staat
 const embeddings = new AzureOpenAIEmbeddings({
     azureOpenAIApiEmbeddingsDeploymentName: process.env.AZURE_EMBEDDING_DEPLOYMENT_NAME
 });
@@ -234,8 +232,7 @@ Welke categorie is dit? Geef alleen het woord.`;
     return 'GENERAL_CHAT'; // Fallback voor als de AI iets anders teruggeeft
 }
 
-// Hoofd endpoint voor chat met streaming
-// VERVANG JE VOLLEDIGE app.post FUNCTIE MET DEZE:
+
 app.post('/chat', async (req, res) => {
     const { messages, sessionId } = req.body;
     if (!messages || messages.length === 0 || !sessionId) {
@@ -311,7 +308,6 @@ ${session.conversationHistory.slice(-6).map(msg => `${msg.role}: ${msg.content}`
 `;
                 const streamGeneral = await model.stream([
                     new SystemMessage(contextPrompt)
-                    // Let op: de HumanMessage is al onderdeel van de history, dus hoeft hier niet per se opnieuw.
                 ]);
                 return handleStreamingResponse(res, streamGeneral, session);
         }
