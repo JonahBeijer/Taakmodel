@@ -56,7 +56,7 @@ Je hebt twee terminals tegelijk nodig om het project te draaien.
 1. Start de server:
 In je eerste terminal (in de /server map):
 
-node server.js
+npm run server.js
 
 De server draait nu op http://localhost:3000.
 
@@ -76,8 +76,7 @@ De bot werkt het beste als je een logische volgorde aanhoudt:
 Start met vragen om nieuws: "geef me het laatste nieuws"
 Vraag daarna om een aanbeveling: "geef een passende anime bij dit nieuws"
 Test de AI met een vervolgvraag: "waarom past die aanbeveling erbij?"
-PS. Je hoeft niet precies deze zinnen te gebruiken! De bot gebruikt een slimme "AI-Router" om te snappen wat je bedoelt, dus experimenteer gerust.
 
 ### Opmerkingen
 De kwaliteit van de anime-aanbevelingen hangt volledig af van de inhoud van je vectorbestand.txt.
-De AI-Router is slim, maar kan soms een gek antwoord geven als een vraag heel onduidelijk is.
+De AI is slim, maar kan soms een gek antwoord geven als een vraag heel onduidelijk is.
